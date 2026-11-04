@@ -14,7 +14,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: canoo/github-stats-cards@v1
+      - uses: canoo/github-stats-cards@v1.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
       - name: Commit cards if changed
