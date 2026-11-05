@@ -6,28 +6,20 @@
   <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&size=22&pause=1000&color=10AE7B&center=true&vCenter=true&width=600&lines=Hi%2C+I%27m+Emi;Software+developer+in+Canada;Building+full+stack+products+and+AI+tooling" alt="Typing intro" />
 </p>
 
-<table>
-  <tr>
-    <td valign="top">
-      <p>
-        Software developer in Canada, building full stack products and AI tooling.
-        Affinity first for brand, UI design and prints.
-      </p>
-      <p>
-        <a href="https://info.codelogiic.com/"><img src="https://img.shields.io/badge/Portfolio-10AE7B?style=for-the-badge&logoColor=white" alt="Portfolio" /></a>
-        <a href="https://www.linkedin.com/in/emilianomartinez"><img src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
-        <!-- Add your links shortly: wrap each badge below in <a href="YOUR LINK"> ... </a> -->
-        <img src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" alt="X" />
-        <img src="https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="Instagram" />
-        <img src="https://img.shields.io/badge/Facebook-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Facebook" />
-        <img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube" />
-      </p>
-    </td>
-    <td valign="top" width="170">
-      <img src="./contrib/tetris.svg" alt="Tetris contribution graph for canoo" width="160" />
-    </td>
-  </tr>
-</table>
+<p align="center">
+  Software developer in Canada, building full stack products and AI tooling.
+  Affinity first for brand, UI design and prints.
+</p>
+
+<p align="center">
+  <a href="https://info.codelogiic.com/"><img src="https://img.shields.io/badge/Portfolio-10AE7B?style=for-the-badge&logoColor=white" alt="Portfolio" /></a>
+  <a href="https://www.linkedin.com/in/emilianomartinez"><img src="https://img.shields.io/badge/LinkedIn-0077B5?style=for-the-badge&logo=linkedin&logoColor=white" alt="LinkedIn" /></a>
+  <!-- Add your links shortly: wrap each badge below in <a href="YOUR LINK"> ... </a> -->
+  <img src="https://img.shields.io/badge/X-000000?style=for-the-badge&logo=x&logoColor=white" alt="X" />
+  <img src="https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white" alt="Instagram" />
+  <img src="https://img.shields.io/badge/Facebook-1877F2?style=for-the-badge&logo=facebook&logoColor=white" alt="Facebook" />
+  <img src="https://img.shields.io/badge/YouTube-FF0000?style=for-the-badge&logo=youtube&logoColor=white" alt="YouTube" />
+</p>
 
 ## Projects
 
@@ -64,14 +56,18 @@ TypeScript / React / Next.js, Go, Python, Firebase, Cloudflare
   <img alt="Contribution snake" src="https://raw.githubusercontent.com/canoo/canoo/output/github-contribution-grid-snake-dark.svg" />
 </picture>
 
-<p align="center">
-  <img src="./profile-3d-contrib/profile-green-animate.svg" alt="3D contribution graph for canoo" />
-</p>
-
-<p align="center">
-  <img src="./contrib/contrib-3d.svg" alt="3D contribution strip for canoo" />
-</p>
+<table>
+  <tr>
+    <td valign="top" width="170">
+      <img src="./contrib/tetris.svg" alt="Tetris contribution graph for canoo" width="160" />
+    </td>
+    <td valign="top">
+      <img src="./contrib/contrib-3d.svg" alt="3D contribution strip for canoo" width="600" />
+    </td>
+  </tr>
+</table>
 
 <p align="center">Want these cool stat cards? Get them from <a href="https://github.com/canoo/github-stats-cards">canoo/github-stats-cards</a></p>
+<p align="center">Tetris and 3D contribution cards, coming to <a href="https://github.com/canoo/github-stats-cards">canoo/github-stats-cards</a></p>
 
 <!-- Snake, 3D graph and stats cards appear after their workflows run once. -->
