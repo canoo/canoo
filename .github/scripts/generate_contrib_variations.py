@@ -55,6 +55,7 @@ TEXT = "#e6edf3"
 SUB = "#8b949e"
 GRID = "#30363d"
 BORDER = "#30363d"
+LANG_COLORS = {"JavaScript": "#f1e05a", "Go": "#00ADD8", "Shell": "#89e051", "TypeScript": "#3178c6", "Python": "#3572a5", "Astro": "#ff5a03", "HTML": "#e34c26", "CSS": "#563d7c"}
 
 COLOR_TO_LEVEL = {
     "#ebedf0": 0,
@@ -123,7 +124,27 @@ def fetch_all(login, token):
     non_fork = [r for r in repos if not r.get("fork")]
     stars = sum(r.get("stargazers_count", 0) for r in non_fork)
     forks = sum(r.get("forks_count", 0) for r in non_fork)
-    return coll, stars, forks, len(non_fork)
+    langs = fetch_langs(login, token, repos)
+    return coll, stars, forks, len(non_fork), langs
+
+
+def fetch_langs(login, token, repos=None):
+    # Top languages by code size, non-fork repos only.
+    if repos is None:
+        repos = api_get(f"https://api.github.com/users/{login}/repos?per_page=100", token)
+    totals = {}
+    for repo in repos:
+        if repo.get("fork"):
+            continue
+        try:
+            data = api_get(repo["languages_url"], token)
+        except Exception:
+            continue
+        for name, n in data.items():
+            totals[name] = totals.get(name, 0) + n
+    top = sorted(totals.items(), key=lambda kv: -kv[1])[:5]
+    total = sum(v for _, v in top) or 1
+    return [(name, n, LANG_COLORS.get(name, "#10AE7B"), round(100 * n / total, 1)) for name, n in top]
 
 
 def grid_from_calendar(calendar, weeks_count=26):
@@ -302,25 +323,18 @@ def static_3d_svg(grid):
 
 
 def snake_svg(grid):
-    # Fix, Nov 6: the old version repeated the whole path
-    # string 13 times, one per body segment, and added a small
-    # dot circle on every contribution cell. On iOS / GitHub
-    # that rendered as a tangled loop, like infinity signs.
-    # Now the path is defined once in <defs> and every segment
-    # references it with <mpath>, the dots are gone, and the
-    # squares themselves fade out as the snake eats them,
-    # like Platane/snk does.
-    # Hunting, Nov 6: the snake no longer follows the calendar
-    # in order. It visits the highest contribution days first,
-    # then the next highest, down to the lowest, oldest first
-    # within the same level. That is the route it follows, so
-    # it jumps across the grid to its next target instead of
-    # sweeping left to right.
-    # Gray blocks, level 0, are never eaten: they have no
-    # fade animation at all. The snake may pass over one on
-    # its way to a target, covering it briefly, but it stays.
-    # One short snake now, 5 body segments, so it does not
-    # look like a bunch of snakes.
+    # Growing snake, Nov 6: only the head moves. Every time it
+    # eats a contribution, that cell becomes a body segment,
+    # in the order it was eaten, so the body grows behind the
+    # head instead of a bunch of dots all moving together.
+    # Hunting with level-banded timing: bright green gets the
+    # first part of the loop, so you actually see it eat them.
+    # Level 4 cells are eaten in the first 30% of the loop,
+    # level 3 in the next 25%, level 2 in the next 20%, level 1
+    # in the last 22%. Within a level, oldest first. Gray
+    # blocks, level 0, are never eaten and never get a segment.
+    import math as _math
+
     weeks = len(grid)
     cell = 13
     size = 10
@@ -339,11 +353,37 @@ def snake_svg(grid):
             eaten.append((level, order, x, y, w, d))
             order += 1
     eaten.sort(key=lambda e: (-e[0], e[1]))
+    bands = {4: (0.0, 0.30), 3: (0.30, 0.55), 2: (0.55, 0.75), 1: (0.75, 0.97)}
+    counts = {}
+    for level, _, _, _, _, _ in eaten:
+        counts[level] = counts.get(level, 0) + 1
+    seen = {}
     eat_time = {}
-    for i, (_, _, _, _, w, d) in enumerate(eaten):
-        eat_time[(w, d)] = i / len(eaten) if eaten else 0
+    for level, _, x, y, w, d in eaten:
+        rank = seen.get(level, 0)
+        seen[level] = rank + 1
+        start_t, end_t = bands[level]
+        t = start_t + (rank + 0.5) * (end_t - start_t) / counts[level]
+        eat_time[(w, d)] = t
+    if eaten:
+        eat_time[(eaten[0][4], eaten[0][5])] = 0.0
     path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for _, _, x, y, _, _ in eaten)
-    dur = 30
+    # Head timing: keyPoints are the fraction along the path,
+    # keyTimes are the eat times, so the head arrives at each
+    # bright cell on schedule and lingers there, instead of
+    # zipping past in the first half second.
+    cum = [0.0]
+    for i in range(1, len(eaten)):
+        dx = eaten[i][2] - eaten[i - 1][2]
+        dy = eaten[i][3] - eaten[i - 1][3]
+        cum.append(cum[-1] + _math.hypot(dx, dy))
+    total_len = cum[-1] or 1.0
+    key_points = [c / total_len for c in cum]
+    key_times = [eat_time[(e[4], e[5])] for e in eaten]
+    # keyTimes must end at 1, head rests at the last cell.
+    key_points.append(key_points[-1])
+    key_times.append(1.0)
+    dur = 40
     parts = []
     parts.append(
         f'<svg xmlns="http://www.w3.org/2000/svg" '
@@ -363,7 +403,7 @@ def snake_svg(grid):
                 )
                 continue
             t = eat_time[(w, d)]
-            eat = min(t + 0.02, 0.99)
+            eat = min(t + 0.01, 0.99)
             parts.append(
                 f'<rect x="{rx}" y="{ry}" width="{size}" height="{size}" '
                 f'rx="2" fill="{GREEN[level]}">'
@@ -371,20 +411,25 @@ def snake_svg(grid):
                 f'keyTimes="0;{t:.3f};{eat:.3f};0.98;1" dur="{dur}s" '
                 f'repeatCount="indefinite"/></rect>'
             )
-    for i in range(5, 0, -1):
-        opacity = round(0.9 - i * 0.12, 2)
+    # Body segments: one per eaten cell, appearing when eaten
+    # and staying until the loop restarts. Only the head moves.
+    for level, _, x, y, w, d in eaten:
+        t = eat_time[(w, d)]
+        appear = min(max(t, 0.001), 0.99)
         parts.append(
-            f'<circle r="5" fill="#39d353" opacity="{opacity}">'
-            f'<animateMotion dur="{dur}s" begin="-{i * 0.5}s" '
-            f'repeatCount="indefinite">'
-            f'<mpath href="#snake-path" xlink:href="#snake-path"/>'
-            f'</animateMotion></circle>'
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#39d353" opacity="0">'
+            f'<animate attributeName="opacity" values="0;0;1;1;0" '
+            f'keyTimes="0;{appear:.3f};{min(appear + 0.01, 0.99):.3f};0.97;1" '
+            f'dur="{dur}s" repeatCount="indefinite"/></circle>'
         )
+    kp = ";".join(f"{v:.4f}" for v in key_points)
+    kt = ";".join(f"{v:.3f}" for v in key_times)
     parts.append(
-        f'<g><circle r="6.5" fill="#39d353"/>'
+        f'<g><circle r="7" fill="#39d353"/>'
         f'<circle cx="2.5" cy="-2.5" r="1.5" fill="#0d1117"/>'
         f'<circle cx="2.5" cy="2.5" r="1.5" fill="#0d1117"/>'
-        f'<animateMotion dur="{dur}s" repeatCount="indefinite">'
+        f'<animateMotion dur="{dur}s" calcMode="linear" '
+        f'keyPoints="{kp}" keyTimes="{kt}" repeatCount="indefinite">'
         f'<mpath href="#snake-path" xlink:href="#snake-path"/>'
         f'</animateMotion></g>'
     )
@@ -520,7 +565,7 @@ def pie_slice(cx, cy, r_outer, r_inner, start, end):
     )
 
 
-def summary_svg(coll, total_contributions, stars, forks, repo_count, avatar_uri):
+def summary_svg(coll, total_contributions, stars, forks, repo_count, avatar_uri, langs=None):
     types = [
         ("Commits", coll["totalCommitContributions"], "#39d353"),
         ("Issues", coll["totalIssueContributions"], "#26a641"),
@@ -543,35 +588,83 @@ def summary_svg(coll, total_contributions, stars, forks, repo_count, avatar_uri)
         f'font-size="12">Last 12 months, own card, transparent background</text>'
     )
     parts.append(avatar_svg(824, 12, 56, avatar_uri))
+    # The left pie alternates every 10 seconds, 20 second loop:
+    # contributions by type first, then top languages.
+    # The radar and big totals on the right stay constant.
+    dur = 20
+    contrib_parts = []
     total_types = sum(v for _, v, _ in types)
     cx, cy, r_outer, r_inner = 130, 200, 95, 58
     angle = 0
     for _, value, color in types:
         sweep = 360 * value / total_types if total_types else 0
         if value:
-            parts.append(
+            contrib_parts.append(
                 f'<path d="{pie_slice(cx, cy, r_outer, r_inner, angle, angle + sweep)}" '
                 f'fill="{color}"/>'
             )
         angle += sweep
-    parts.append(
+    contrib_parts.append(
         f'<text x="{cx}" y="{cy - 6}" fill="{TEXT}" font-family="sans-serif" '
         f'font-size="22" font-weight="bold" text-anchor="middle">{total_types}</text>'
     )
-    parts.append(
+    contrib_parts.append(
         f'<text x="{cx}" y="{cy + 14}" fill="{SUB}" font-family="sans-serif" '
         f'font-size="11" text-anchor="middle">total</text>'
     )
     y = 110
     for label, value, color in types:
-        parts.append(
+        contrib_parts.append(
             f'<rect x="250" y="{y - 10}" width="12" height="12" rx="3" fill="{color}"/>'
         )
-        parts.append(
+        contrib_parts.append(
             f'<text x="270" y="{y + 2}" fill="{TEXT}" font-family="sans-serif" '
             f'font-size="13">{label} {value}</text>'
         )
         y += 28
+    parts.append(
+        f'<g><animate attributeName="opacity" values="1;1;0;0;1" '
+        f'keyTimes="0;0.45;0.5;0.95;1" dur="{dur}s" repeatCount="indefinite"/>'
+        + "\n".join(contrib_parts)
+        + "</g>"
+    )
+    if langs:
+        lang_parts = []
+        total_lang = sum(n for _, n, _, _ in langs) or 1
+        angle = 0
+        for name, value, color, _pct in langs:
+            sweep = 360 * value / total_lang if total_lang else 0
+            if value:
+                lang_parts.append(
+                    f'<path d="{pie_slice(cx, cy, r_outer, r_inner, angle, angle + sweep)}" '
+                    f'fill="{color}"/>'
+                )
+            angle += sweep
+        lang_parts.append(
+            f'<text x="{cx}" y="{cy - 6}" fill="{TEXT}" font-family="sans-serif" '
+            f'font-size="22" font-weight="bold" text-anchor="middle">{len(langs)}</text>'
+        )
+        lang_parts.append(
+            f'<text x="{cx}" y="{cy + 14}" fill="{SUB}" font-family="sans-serif" '
+            f'font-size="11" text-anchor="middle">langs</text>'
+        )
+        y = 110
+        for name, value, color, _pct in langs:
+            pct = round(100 * value / total_lang, 1) if total_lang else 0
+            lang_parts.append(
+                f'<rect x="250" y="{y - 10}" width="12" height="12" rx="3" fill="{color}"/>'
+            )
+            lang_parts.append(
+                f'<text x="270" y="{y + 2}" fill="{TEXT}" font-family="sans-serif" '
+                f'font-size="13">{name} {pct}%</text>'
+            )
+            y += 28
+        parts.append(
+            f'<g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0" '
+            f'keyTimes="0;0.45;0.5;0.95;1" dur="{dur}s" repeatCount="indefinite"/>'
+            + "\n".join(lang_parts)
+            + "</g>"
+        )
     rcx, rcy, r_max = 540, 200, 90
     max_value = max(v for _, v, _ in types)
     for frac in (0.33, 0.66, 1.0):
@@ -621,7 +714,7 @@ def summary_svg(coll, total_contributions, stars, forks, repo_count, avatar_uri)
         y += 55
     parts.append(
         f'<text x="20" y="{height - 14}" fill="{SUB}" font-family="sans-serif" '
-        f'font-size="11">GraphQL totals, last 12 months. Stars and forks are public repos, all time.</text>'
+        f'font-size="11">Pie alternates every 10s: contributions, then top languages. GraphQL totals, last 12 months.</text>'
     )
     parts.append("</svg>")
     return "\n".join(parts)
@@ -641,6 +734,7 @@ def main():
                 coll["contributionCalendar"] = calendar
         stars, forks, repo_count = 12, 3, 9
         login = os.environ.get("GITHUB_USER", "canoo")
+        langs = [("JavaScript", 210876, "#f1e05a", 36.4), ("Go", 156965, "#00ADD8", 27.1), ("Shell", 73487, "#89e051", 12.7), ("TypeScript", 36769, "#3178c6", 6.4), ("Python", 32901, "#3572a5", 5.7)]
     else:
         token = os.environ.get("GITHUB_TOKEN", "")
         if not token:
@@ -648,7 +742,7 @@ def main():
         login = os.environ.get("GITHUB_USER") or os.environ.get(
             "GITHUB_REPOSITORY_OWNER", "canoo"
         )
-        coll, stars, forks, repo_count = fetch_all(login, token)
+        coll, stars, forks, repo_count, langs = fetch_all(login, token)
         calendar = coll["contributionCalendar"]
     avatar_uri = avatar_data_uri(login)
     grid26 = grid_from_calendar(calendar, 26)
@@ -676,7 +770,7 @@ def main():
         "own-snake.svg": snake_svg(grid_full),
         "own-streak.svg": streak_svg(s, avatar_uri),
         "own-summary.svg": summary_svg(
-            coll, calendar["totalContributions"], stars, forks, repo_count, avatar_uri
+            coll, calendar["totalContributions"], stars, forks, repo_count, avatar_uri, langs
         ),
     }
     for name, content in files.items():
