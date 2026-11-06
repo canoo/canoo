@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="360" viewBox="0 0 900 360">
+<text x="20" y="28" fill="#e6edf3" font-family="sans-serif" font-size="16" font-weight="bold">Contributions</text>
+<text x="20" y="48" fill="#8b949e" font-family="sans-serif" font-size="12">Last 12 months, own card, transparent background</text>
+<defs><clipPath id="avatar-clip-824-12"><circle cx="852" cy="40" r="28"/></clipPath></defs><circle cx="852" cy="40" r="30" fill="#30363d"/><image x="824" y="12" width="56" height="56" href="data:image/jpeg;base64,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" clip-path="url(#avatar-clip-824-12)"/>
+<path d="M 130.0 105.0 A 95 95 0 1 1 93.4 287.7 L 107.7 253.5 A 58 58 0 1 0 130.0 142.0 Z" fill="#39d353"/>
+<path d="M 93.4 287.7 A 95 95 0 0 1 62.5 133.2 L 88.8 159.2 A 58 58 0 0 0 107.7 253.5 Z" fill="#26a641"/>
+<path d="M 62.5 133.2 A 95 95 0 0 1 99.0 110.2 L 111.0 145.2 A 58 58 0 0 0 88.8 159.2 Z" fill="#006d32"/>
+<path d="M 99.0 110.2 A 95 95 0 0 1 114.3 106.3 L 120.4 142.8 A 58 58 0 0 0 111.0 145.2 Z" fill="#10ae7b"/>
+<path d="M 114.3 106.3 A 95 95 0 0 1 130.0 105.0 L 130.0 142.0 A 58 58 0 0 0 120.4 142.8 Z" fill="#8b949e"/>
+<text x="130" y="194" fill="#e6edf3" font-family="sans-serif" font-size="22" font-weight="bold" text-anchor="middle">302</text>
+<text x="130" y="214" fill="#8b949e" font-family="sans-serif" font-size="11" text-anchor="middle">total</text>
+<rect x="250" y="100" width="12" height="12" rx="3" fill="#39d353"/>
+<text x="270" y="112" fill="#e6edf3" font-family="sans-serif" font-size="13">Commits 170</text>
+<rect x="250" y="128" width="12" height="12" rx="3" fill="#26a641"/>
+<text x="270" y="140" fill="#e6edf3" font-family="sans-serif" font-size="13">Issues 94</text>
+<rect x="250" y="156" width="12" height="12" rx="3" fill="#006d32"/>
+<text x="270" y="168" fill="#e6edf3" font-family="sans-serif" font-size="13">Pull requests 22</text>
+<rect x="250" y="184" width="12" height="12" rx="3" fill="#10ae7b"/>
+<text x="270" y="196" fill="#e6edf3" font-family="sans-serif" font-size="13">Reviews 8</text>
+<rect x="250" y="212" width="12" height="12" rx="3" fill="#8b949e"/>
+<text x="270" y="224" fill="#e6edf3" font-family="sans-serif" font-size="13">Repos 8</text>
+<polygon points="540.0,170.3 568.2,190.8 557.5,224.0 522.5,224.0 511.8,190.8" fill="none" stroke="#30363d"/>
+<polygon points="540.0,140.6 596.5,181.6 574.9,248.1 505.1,248.1 483.5,181.6" fill="none" stroke="#30363d"/>
+<polygon points="540.0,110.0 625.6,172.2 592.9,272.8 487.1,272.8 454.4,172.2" fill="none" stroke="#30363d"/>
+<polygon points="540.0,110.0 587.3,184.6 546.8,209.4 537.5,203.4 536.0,198.7" fill="#10ae7b" fill-opacity="0.35" stroke="#39d353" stroke-width="2"/>
+<text x="540.0" y="92.0" fill="#e6edf3" font-family="sans-serif" font-size="12" text-anchor="middle">Commits</text>
+<text x="642.7" y="166.6" fill="#e6edf3" font-family="sans-serif" font-size="12" text-anchor="start">Issues</text>
+<text x="603.5" y="287.4" fill="#e6edf3" font-family="sans-serif" font-size="12" text-anchor="start">PRs</text>
+<text x="476.5" y="287.4" fill="#e6edf3" font-family="sans-serif" font-size="12" text-anchor="end">Reviews</text>
+<text x="437.3" y="166.6" fill="#e6edf3" font-family="sans-serif" font-size="12" text-anchor="end">Repos</text>
+<text x="730" y="125" fill="#e6edf3" font-family="sans-serif" font-size="26" font-weight="bold">2,904</text>
+<text x="730" y="145" fill="#8b949e" font-family="sans-serif" font-size="12">contributions</text>
+<text x="730" y="180" fill="#e6edf3" font-family="sans-serif" font-size="26" font-weight="bold">12</text>
+<text x="730" y="200" fill="#8b949e" font-family="sans-serif" font-size="12">stars</text>
+<text x="730" y="235" fill="#e6edf3" font-family="sans-serif" font-size="26" font-weight="bold">3</text>
+<text x="730" y="255" fill="#8b949e" font-family="sans-serif" font-size="12">forks</text>
+<text x="730" y="290" fill="#e6edf3" font-family="sans-serif" font-size="26" font-weight="bold">9</text>
+<text x="730" y="310" fill="#8b949e" font-family="sans-serif" font-size="12">repos</text>
+<text x="20" y="346" fill="#8b949e" font-family="sans-serif" font-size="11">GraphQL totals, last 12 months. Stars and forks are public repos, all time.</text>
+</svg>

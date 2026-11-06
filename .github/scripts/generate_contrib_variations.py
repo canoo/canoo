@@ -1,42 +1,61 @@
-"""Generate Tetris and 3D contribution cards from real data.
+"""Generate all own contribution cards from real data.
 
-Original implementation by Emi / Canoo, inspired by (with credit):
-- Platane/snk, the snake contribution graph
-- yoshi389111/github-profile-3d-contrib, the 3D contribution graph
+Original implementation by Emi / Canoo, inspired by (with
+credit) Platane/snk (snake), yoshi389111/github-profile-3d-contrib
+(3D), and DenverCoder1/github-readme-streak-stats (streak).
+No code is copied from those projects.
 
-Neither project is copied here. The Tetris falling animation
-and the static 3D strip are written from scratch.
+Cards generated, all as static files, no hosted service at
+view time:
+- tetris.svg: vertical contribution graph, blocks fall slowly,
+  bottom row first, fill up, hold, then reset and loop again.
+- contrib-3d.svg: static isometric 3D contribution strip.
+- own-snake.svg: snake follows a serpentine path through
+  the contribution grid, eating dots as it passes, loop.
+- own-streak.svg: total contributions, current streak,
+  longest streak, last 12 months.
+- own-summary.svg: pie chart and pentagon radar for commits,
+  issues, PRs, reviews, and repos, plus total contributions,
+  stars, and forks. Transparent background. Includes the
+  user's GitHub avatar, embedded as base64, top right.
+  The streak card also includes the avatar, top right.
+  Snake and Tetris do not include an avatar, as Emi asked.
 
-How it runs, with no hosted service at view time:
-- A GitHub Action runs this script on a schedule, with the
-  workflow GITHUB_TOKEN. It reads the public contribution
-  calendar for the repo owner through the GitHub GraphQL API.
-- It writes contrib/tetris.svg and contrib/contrib-3d.svg
-  into this repo, and the workflow commits them.
-- The README embeds those files, so at view time there is
-  no server, no Vercel, no API call. Motion lives inside the
-  Tetris SVG itself, as SMIL animation.
+Data, all from the GitHub API with the workflow token:
+- GraphQL contribution calendar, last 53 weeks, for levels
+  and streaks, and contributionsCollection totals for
+  commits, issues, PRs, reviews, and repos.
+- REST repos list, non-fork only, for stars and forks.
+- Avatar from https://github.com/{login}.png, resized to
+  96px when PIL is available, otherwise embedded as is.
+  It is embedded as base64 in the SVG, so at view time
+  there is no external image to load.
 
-Tetris behaviour: blocks fall once, bottom row first, and
-freeze in place, so the graph stacks upward from the floor
-and stays finished. Reloading the page replays the build.
-The 3D strip is static, no spin, no animation.
-
-Levels come from the GraphQL color for each day, mapped
-to 0 to 4. Counts are not shown in the SVGs, only levels,
-the same as the standard contribution graph.
+Usage:
+- In a GitHub Action, run with GITHUB_TOKEN set, no args.
+  It writes to the contrib/ folder in the repo root.
+- Local test: pass a GraphQL calendar JSON file as the
+  first argument, and a totals JSON file as the second,
+  for example the files saved from gh api graphql.
+  Avatar is then read from avatar-96.jpg in this folder
+  if it exists, otherwise downloaded.
 """
 
+import base64
+import io
 import json
+import math
 import os
 import sys
 import urllib.request
 
 GREEN = ["#161b22", "#0e4429", "#006d32", "#26a641", "#39d353"]
 BG = "#0d1117"
+TEXT = "#e6edf3"
+SUB = "#8b949e"
+GRID = "#30363d"
+BORDER = "#30363d"
 
-# Light palette returned by the GraphQL API, plus the dark
-# palette in case GitHub ever returns that instead.
 COLOR_TO_LEVEL = {
     "#ebedf0": 0,
     "#9be9a8": 1,
@@ -50,10 +69,15 @@ COLOR_TO_LEVEL = {
     "#39d353": 4,
 }
 
-QUERY = """
+CALENDAR_QUERY = """
 query($login: String!) {
   user(login: $login) {
     contributionsCollection {
+      totalCommitContributions
+      totalIssueContributions
+      totalPullRequestContributions
+      totalPullRequestReviewContributions
+      totalRepositoryContributions
       contributionCalendar {
         totalContributions
         weeks {
@@ -70,36 +94,46 @@ query($login: String!) {
 }
 """
 
-WEEKS = 26
+
+def api_get(url, token):
+    req = urllib.request.Request(
+        url, headers={"Authorization": f"Bearer {token}", "User-Agent": "canoo-cards"}
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.load(resp)
 
 
-def fetch_calendar(login, token):
-    body = json.dumps({"query": QUERY, "variables": {"login": login}}).encode()
+def fetch_all(login, token):
+    body = json.dumps({"query": CALENDAR_QUERY, "variables": {"login": login}}).encode()
     req = urllib.request.Request(
         "https://api.github.com/graphql",
         data=body,
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
-            "User-Agent": "canoo-contrib-variations",
+            "User-Agent": "canoo-cards",
         },
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         data = json.load(resp)
     if "errors" in data:
         raise RuntimeError(f"GraphQL errors: {data['errors']}")
-    return data["data"]["user"]["contributionsCollection"]["contributionCalendar"]
+    coll = data["data"]["user"]["contributionsCollection"]
+    repos = api_get(f"https://api.github.com/users/{login}/repos?per_page=100", token)
+    non_fork = [r for r in repos if not r.get("fork")]
+    stars = sum(r.get("stargazers_count", 0) for r in non_fork)
+    forks = sum(r.get("forks_count", 0) for r in non_fork)
+    return coll, stars, forks, len(non_fork)
 
 
-def grid_from_calendar(calendar):
-    weeks = calendar["weeks"][-WEEKS:]
+def grid_from_calendar(calendar, weeks_count=26):
+    weeks = calendar["weeks"][-weeks_count:]
     grid = []
     for week in weeks:
         row = [0] * 7
         for day in week["contributionDays"]:
             level = COLOR_TO_LEVEL.get(day["color"].lower())
             if level is None:
-                # Fall back to count buckets if a color is unknown.
                 count = day["contributionCount"]
                 level = 0 if count == 0 else 1 if count <= 2 else 2 if count <= 5 else 3 if count <= 9 else 4
             row[day["weekday"]] = level
@@ -107,13 +141,69 @@ def grid_from_calendar(calendar):
     return grid
 
 
+def full_grid(calendar):
+    return grid_from_calendar(calendar, weeks_count=len(calendar["weeks"]))
+
+
+def avatar_data_uri(login, token=None):
+    # Local test file first, then download the GitHub avatar.
+    local = os.path.join(os.path.dirname(os.path.abspath(__file__)), "avatar-96.jpg")
+    raw = None
+    if os.path.exists(local):
+        with open(local, "rb") as f:
+            raw = f.read()
+    else:
+        try:
+            req = urllib.request.Request(
+                f"https://github.com/{login}.png",
+                headers={"User-Agent": "canoo-cards"},
+            )
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                raw = resp.read()
+        except Exception:
+            return ""
+    if not raw:
+        return ""
+    try:
+        from PIL import Image
+
+        im = Image.open(io.BytesIO(raw)).convert("RGB")
+        im.thumbnail((96, 96))
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=82)
+        raw = buf.getvalue()
+    except Exception:
+        pass
+    return "data:image/jpeg;base64," + base64.b64encode(raw).decode()
+
+
+def avatar_svg(x, y, size, uri):
+    if not uri:
+        return ""
+    r = size // 2
+    cx, cy = x + r, y + r
+    return (
+        f'<defs><clipPath id="avatar-clip-{x}-{y}">'
+        f'<circle cx="{cx}" cy="{cy}" r="{r}"/></clipPath></defs>'
+        f'<circle cx="{cx}" cy="{cy}" r="{r + 2}" fill="{BORDER}"/>'
+        f'<image x="{x}" y="{y}" width="{size}" height="{size}" '
+        f'href="{uri}" clip-path="url(#avatar-clip-{x}-{y})"/>'
+    )
+
+
 def tetris_svg(grid):
+    """Loop version, Nov 5: blocks fall slowly, bottom first,
+    fill up, hold full, then reset and play again. One global
+    16 second cycle, so all blocks reset together, not one
+    by one. Fall is encoded in keyTimes per block, with a
+    shared hold at 0.88 and reset at 1.0."""
     weeks = len(grid)
     cell = 17
     size = 14
     pad_x, pad_y = 20, 36
     width = 7 * cell + pad_x * 2
     height = weeks * cell + pad_y + 24
+    dur = 16
     parts = []
     parts.append(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
@@ -121,7 +211,7 @@ def tetris_svg(grid):
     )
     parts.append(f'<rect width="{width}" height="{height}" fill="{BG}" rx="8"/>')
     parts.append(
-        f'<text x="{pad_x}" y="20" fill="#e6edf3" font-family="sans-serif" '
+        f'<text x="{pad_x}" y="20" fill="{TEXT}" font-family="sans-serif" '
         f'font-size="13">Tetris contributions</text>'
     )
     for w in range(weeks):
@@ -129,14 +219,18 @@ def tetris_svg(grid):
             level = grid[w][d]
             x = pad_x + d * cell
             y = pad_y + w * cell
-            begin = round((weeks - 1 - w) * 0.12 + d * 0.02, 2)
+            start = round(0.05 + (weeks - 1 - w) * 0.02, 3)
+            end = round(min(start + 0.12, 0.87), 3)
             parts.append(
                 f'<rect x="{x}" y="{y}" width="{size}" height="{size}" '
-                f'rx="3" fill="{GREEN[level]}" '
-                f'transform="translate(0 -{height})">'
+                f'rx="3" fill="{GREEN[level]}" opacity="0">'
                 f'<animateTransform attributeName="transform" type="translate" '
-                f'from="0 -{height}" to="0 0" dur="1.2s" begin="{begin}s" '
-                f'fill="freeze"/></rect>'
+                f'values="0 -{height}; 0 -{height}; 0 0; 0 0; 0 -{height}" '
+                f'keyTimes="0;{start};{end};0.88;1" dur="{dur}s" '
+                f'repeatCount="indefinite"/>'
+                f'<animate attributeName="opacity" values="0;0;1;1;0" '
+                f'keyTimes="0;{start};{end};0.88;1" dur="{dur}s" '
+                f'repeatCount="indefinite"/></rect>'
             )
     parts.append(
         f'<rect x="{pad_x}" y="{pad_y + weeks * cell + 4}" '
@@ -182,7 +276,7 @@ def static_3d_svg(grid):
     )
     parts.append(f'<rect width="{width}" height="{height}" fill="{BG}" rx="8"/>')
     parts.append(
-        f'<text x="20" y="24" fill="#e6edf3" font-family="sans-serif" '
+        f'<text x="20" y="24" fill="{TEXT}" font-family="sans-serif" '
         f'font-size="13">3D contributions</text>'
     )
     parts.extend(cubes)
@@ -190,15 +284,296 @@ def static_3d_svg(grid):
     return "\n".join(parts)
 
 
+def snake_svg(grid):
+    weeks = len(grid)
+    cell = 13
+    size = 10
+    pad_x, pad_y = 20, 20
+    width = weeks * cell + pad_x * 2
+    height = 7 * cell + pad_y * 2
+    points = []
+    for w in range(weeks):
+        days = range(7) if w % 2 == 0 else range(6, -1, -1)
+        for d in days:
+            x = pad_x + w * cell + size / 2
+            y = pad_y + d * cell + size / 2
+            points.append((x, y, w, d))
+    path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y, _, _ in points)
+    dur = 40
+    parts = []
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
+        f'height="{height}" viewBox="0 0 {width} {height}">'
+    )
+    for w in range(weeks):
+        for d in range(7):
+            x = pad_x + w * cell
+            y = pad_y + d * cell
+            parts.append(
+                f'<rect x="{x}" y="{y}" width="{size}" height="{size}" '
+                f'rx="2" fill="{GREEN[grid[w][d]]}"/>'
+            )
+    total = len(points)
+    for i, (x, y, w, d) in enumerate(points):
+        if grid[w][d] == 0:
+            continue
+        t = i / total
+        parts.append(
+            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="#7ee787">'
+            f'<animate attributeName="opacity" values="1;1;0;0;1" '
+            f'keyTimes="0;{t:.3f};{t + 0.01:.3f};0.98;1" dur="{dur}s" '
+            f'repeatCount="indefinite"/></circle>'
+        )
+    for i in range(12, 0, -1):
+        opacity = round(0.9 - i * 0.06, 2)
+        parts.append(
+            f'<circle r="5" fill="#39d353" opacity="{opacity}">'
+            f'<animateMotion dur="{dur}s" begin="-{i * 0.8}s" '
+            f'repeatCount="indefinite" path="{path}"/></circle>'
+        )
+    parts.append(
+        f'<g><circle r="6.5" fill="#39d353"/>'
+        f'<circle cx="2.5" cy="-2.5" r="1.5" fill="#0d1117"/>'
+        f'<circle cx="2.5" cy="2.5" r="1.5" fill="#0d1117"/>'
+        f'<animateMotion dur="{dur}s" repeatCount="indefinite" path="{path}"/>'
+        f'</g>'
+    )
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
+def streak_data(calendar):
+    days = []
+    for week in calendar["weeks"]:
+        for day in week["contributionDays"]:
+            days.append((day["date"], day["contributionCount"]))
+    days.sort()
+    total = sum(c for _, c in days)
+    cur = 0
+    for _, c in reversed(days):
+        if c > 0:
+            cur += 1
+        else:
+            break
+    best = 0
+    run = 0
+    best_start = best_end = None
+    run_start = None
+    for d, c in days:
+        if c > 0:
+            if run == 0:
+                run_start = d
+            run += 1
+            if run > best:
+                best = run
+                best_start = run_start
+                best_end = d
+        else:
+            run = 0
+    cur_start = days[-cur][0] if cur else None
+    return {
+        "total": total,
+        "current": cur,
+        "current_start": cur_start,
+        "current_end": days[-1][0],
+        "longest": best,
+        "longest_start": best_start,
+        "longest_end": best_end,
+    }
+
+
+def streak_svg(s, avatar_uri):
+    width, height = 495, 195
+    parts = []
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
+        f'height="{height}" viewBox="0 0 {width} {height}">'
+    )
+    parts.append(
+        f'<rect x="1" y="1" width="{width - 2}" height="{height - 2}" '
+        f'rx="10" fill="{BG}" stroke="{BORDER}"/>'
+    )
+    parts.append(
+        f'<text x="24" y="36" fill="{TEXT}" font-family="sans-serif" '
+        f'font-size="18" font-weight="bold">GitHub Streak</text>'
+    )
+    parts.append(
+        f'<text x="24" y="56" fill="{SUB}" font-family="sans-serif" '
+        f'font-size="12">Own card, last 12 months</text>'
+    )
+    parts.append(avatar_svg(424, 14, 48, avatar_uri))
+    cols = [
+        (f"{s['total']:,}", "Total Contributions", ""),
+        (str(s["current"]), "Current Streak", f"{s['current_start']} to {s['current_end']}"),
+        (str(s["longest"]), "Longest Streak", f"{s['longest_start']} to {s['longest_end']}"),
+    ]
+    x = 24
+    for value, label, dates in cols:
+        parts.append(
+            f'<text x="{x}" y="110" fill="#39d353" font-family="sans-serif" '
+            f'font-size="30" font-weight="bold">{value}</text>'
+        )
+        parts.append(
+            f'<text x="{x}" y="132" fill="{TEXT}" font-family="sans-serif" '
+            f'font-size="13">{label}</text>'
+        )
+        if dates:
+            parts.append(
+                f'<text x="{x}" y="150" fill="{SUB}" font-family="sans-serif" '
+                f'font-size="11">{dates}</text>'
+            )
+        x += 160
+    frac = s["current"] / s["longest"] if s["longest"] else 0
+    bar_w = width - 48
+    parts.append(
+        f'<rect x="24" y="168" width="{bar_w}" height="6" rx="3" fill="{BORDER}"/>'
+    )
+    parts.append(
+        f'<rect x="24" y="168" width="{bar_w * frac:.0f}" height="6" rx="3" fill="#39d353"/>'
+    )
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
+def polar(cx, cy, r, angle_deg):
+    a = math.radians(angle_deg - 90)
+    return (cx + r * math.cos(a), cy + r * math.sin(a))
+
+
+def pie_slice(cx, cy, r_outer, r_inner, start, end):
+    x1, y1 = polar(cx, cy, r_outer, start)
+    x2, y2 = polar(cx, cy, r_outer, end)
+    x3, y3 = polar(cx, cy, r_inner, end)
+    x4, y4 = polar(cx, cy, r_inner, start)
+    large = 1 if end - start > 180 else 0
+    return (
+        f"M {x1:.1f} {y1:.1f} "
+        f"A {r_outer} {r_outer} 0 {large} 1 {x2:.1f} {y2:.1f} "
+        f"L {x3:.1f} {y3:.1f} "
+        f"A {r_inner} {r_inner} 0 {large} 0 {x4:.1f} {y4:.1f} Z"
+    )
+
+
+def summary_svg(coll, total_contributions, stars, forks, repo_count, avatar_uri):
+    types = [
+        ("Commits", coll["totalCommitContributions"], "#39d353"),
+        ("Issues", coll["totalIssueContributions"], "#26a641"),
+        ("Pull requests", coll["totalPullRequestContributions"], "#006d32"),
+        ("Reviews", coll["totalPullRequestReviewContributions"], "#10ae7b"),
+        ("Repos", coll["totalRepositoryContributions"], "#8b949e"),
+    ]
+    width, height = 900, 360
+    parts = []
+    parts.append(
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
+        f'height="{height}" viewBox="0 0 {width} {height}">'
+    )
+    parts.append(
+        f'<text x="20" y="28" fill="{TEXT}" font-family="sans-serif" '
+        f'font-size="16" font-weight="bold">Contributions</text>'
+    )
+    parts.append(
+        f'<text x="20" y="48" fill="{SUB}" font-family="sans-serif" '
+        f'font-size="12">Last 12 months, own card, transparent background</text>'
+    )
+    parts.append(avatar_svg(824, 12, 56, avatar_uri))
+    total_types = sum(v for _, v, _ in types)
+    cx, cy, r_outer, r_inner = 130, 200, 95, 58
+    angle = 0
+    for _, value, color in types:
+        sweep = 360 * value / total_types if total_types else 0
+        if value:
+            parts.append(
+                f'<path d="{pie_slice(cx, cy, r_outer, r_inner, angle, angle + sweep)}" '
+                f'fill="{color}"/>'
+            )
+        angle += sweep
+    parts.append(
+        f'<text x="{cx}" y="{cy - 6}" fill="{TEXT}" font-family="sans-serif" '
+        f'font-size="22" font-weight="bold" text-anchor="middle">{total_types}</text>'
+    )
+    parts.append(
+        f'<text x="{cx}" y="{cy + 14}" fill="{SUB}" font-family="sans-serif" '
+        f'font-size="11" text-anchor="middle">total</text>'
+    )
+    y = 110
+    for label, value, color in types:
+        parts.append(
+            f'<rect x="250" y="{y - 10}" width="12" height="12" rx="3" fill="{color}"/>'
+        )
+        parts.append(
+            f'<text x="270" y="{y + 2}" fill="{TEXT}" font-family="sans-serif" '
+            f'font-size="13">{label} {value}</text>'
+        )
+        y += 28
+    rcx, rcy, r_max = 540, 200, 90
+    max_value = max(v for _, v, _ in types)
+    for frac in (0.33, 0.66, 1.0):
+        points = []
+        for i in range(5):
+            x, y = polar(rcx, rcy, r_max * frac, i * 72)
+            points.append(f"{x:.1f},{y:.1f}")
+        parts.append(
+            f'<polygon points="{" ".join(points)}" fill="none" stroke="{GRID}"/>'
+        )
+    data_points = []
+    for i, (_, value, _) in enumerate(types):
+        x, y = polar(rcx, rcy, r_max * value / max_value, i * 72)
+        data_points.append(f"{x:.1f},{y:.1f}")
+    parts.append(
+        f'<polygon points="{" ".join(data_points)}" fill="#10ae7b" '
+        f'fill-opacity="0.35" stroke="#39d353" stroke-width="2"/>'
+    )
+    short = ["Commits", "Issues", "PRs", "Reviews", "Repos"]
+    for i, label in enumerate(short):
+        x, y = polar(rcx, rcy, r_max + 18, i * 72)
+        anchor = "middle"
+        if x < rcx - 20:
+            anchor = "end"
+        elif x > rcx + 20:
+            anchor = "start"
+        parts.append(
+            f'<text x="{x:.1f}" y="{y:.1f}" fill="{TEXT}" font-family="sans-serif" '
+            f'font-size="12" text-anchor="{anchor}">{label}</text>'
+        )
+    stats = [
+        (f"{total_contributions:,}", "contributions"),
+        (str(stars), "stars"),
+        (str(forks), "forks"),
+        (str(repo_count), "repos"),
+    ]
+    y = 125
+    for value, label in stats:
+        parts.append(
+            f'<text x="730" y="{y}" fill="{TEXT}" font-family="sans-serif" '
+            f'font-size="26" font-weight="bold">{value}</text>'
+        )
+        parts.append(
+            f'<text x="730" y="{y + 20}" fill="{SUB}" font-family="sans-serif" '
+            f'font-size="12">{label}</text>'
+        )
+        y += 55
+    parts.append(
+        f'<text x="20" y="{height - 14}" fill="{SUB}" font-family="sans-serif" '
+        f'font-size="11">GraphQL totals, last 12 months. Stars and forks are public repos, all time.</text>'
+    )
+    parts.append("</svg>")
+    return "\n".join(parts)
+
+
 def main():
-    # Local test: pass a GraphQL response JSON file as the first
-    # argument, for example the file saved from gh api graphql.
-    # In the workflow, no argument is given, and the script calls
-    # the GraphQL API with GITHUB_TOKEN instead.
     if len(sys.argv) > 1:
         with open(sys.argv[1], encoding="utf-8") as f:
             data = json.load(f)
-        calendar = data["data"]["user"]["contributionsCollection"]["contributionCalendar"]
+        coll = data["data"]["user"]["contributionsCollection"]
+        calendar = coll["contributionCalendar"]
+        # Totals live in a second file for local tests.
+        totals_path = sys.argv[2] if len(sys.argv) > 2 else "totals.json"
+        if os.path.exists(totals_path):
+            with open(totals_path, encoding="utf-8") as f:
+                coll = json.load(f)["data"]["user"]["contributionsCollection"]
+                coll["contributionCalendar"] = calendar
+        stars, forks, repo_count = 12, 3, 9
         login = os.environ.get("GITHUB_USER", "canoo")
     else:
         token = os.environ.get("GITHUB_TOKEN", "")
@@ -207,19 +582,42 @@ def main():
         login = os.environ.get("GITHUB_USER") or os.environ.get(
             "GITHUB_REPOSITORY_OWNER", "canoo"
         )
-        calendar = fetch_calendar(login, token)
-    grid = grid_from_calendar(calendar)
+        coll, stars, forks, repo_count = fetch_all(login, token)
+        calendar = coll["contributionCalendar"]
+    avatar_uri = avatar_data_uri(login)
+    grid26 = grid_from_calendar(calendar, 26)
+    grid_full = full_grid(calendar)
+    s = streak_data(calendar)
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    out_dir = os.path.join(root, "contrib")
+    # When this file lives in contrib-variations/, root is the workspace,
+    # so output to contrib-variations/ for local tests. When it lives
+    # in .github/scripts/, root is the repo root, output to contrib/.
+    if os.path.basename(root) == "workspace":
+        out_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "")
+    else:
+        out_dir = os.path.join(root, "contrib")
+    # Simpler: always write next to this script's folder for tests,
+    # and to contrib/ under the repo root when run from .github/scripts.
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    if os.path.basename(script_dir) == "scripts":
+        out_dir = os.path.join(root, "contrib")
+    else:
+        out_dir = script_dir
     os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, "tetris.svg"), "w", encoding="utf-8") as f:
-        f.write(tetris_svg(grid))
-    with open(os.path.join(out_dir, "contrib-3d.svg"), "w", encoding="utf-8") as f:
-        f.write(static_3d_svg(grid))
-    total = calendar.get("totalContributions")
-    print(f"user: {login}, total contributions (all time): {total}")
-    print(f"weeks used: {len(grid)}, blocks: {len(grid) * 7}")
-    print(f"wrote: {out_dir}/tetris.svg and {out_dir}/contrib-3d.svg")
+    files = {
+        "tetris.svg": tetris_svg(grid26),
+        "contrib-3d.svg": static_3d_svg(grid26),
+        "own-snake.svg": snake_svg(grid_full),
+        "own-streak.svg": streak_svg(s, avatar_uri),
+        "own-summary.svg": summary_svg(
+            coll, calendar["totalContributions"], stars, forks, repo_count, avatar_uri
+        ),
+    }
+    for name, content in files.items():
+        with open(os.path.join(out_dir, name), "w", encoding="utf-8") as f:
+            f.write(content)
+    print(f"user: {login}, total: {calendar['totalContributions']}, streak: {s['current']}")
+    print(f"wrote {len(files)} cards to {out_dir}")
 
 
 if __name__ == "__main__":
