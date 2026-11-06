@@ -323,16 +323,21 @@ def static_3d_svg(grid):
 
 
 def snake_svg(grid):
-    # Growing snake, Nov 6: only the head moves. Every time it
-    # eats a contribution, that cell becomes a body segment,
-    # in the order it was eaten, so the body grows behind the
-    # head instead of a bunch of dots all moving together.
-    # Hunting with level-banded timing: bright green gets the
-    # first part of the loop, so you actually see it eat them.
-    # Level 4 cells are eaten in the first 30% of the loop,
-    # level 3 in the next 25%, level 2 in the next 20%, level 1
-    # in the last 22%. Within a level, oldest first. Gray
-    # blocks, level 0, are never eaten and never get a segment.
+    # Grid snake, Nov 6: the head moves only up, down, left,
+    # or right along the grid, never diagonally. It walks to
+    # the highest contribution days first, then the next
+    # highest, down to the lowest, oldest first within a
+    # level, using a grid walk, horizontal then vertical,
+    # to each target.
+    # Eaten dots join the body: every time it eats a target,
+    # a new body segment appears and then follows the head
+    # along the same grid walk, trailing behind it. The
+    # segments do not stay where they were eaten. Body grows
+    # to 12 segments, then stays that long as it keeps eating.
+    # Bright green gets the first part of the loop, level 4
+    # in the first 30%, level 3 next 25%, level 2 next 20%,
+    # level 1 last 22%, so you actually see it eat them.
+    # Gray blocks, level 0, are never eaten.
     import math as _math
 
     weeks = len(grid)
@@ -341,6 +346,10 @@ def snake_svg(grid):
     pad_x, pad_y = 20, 20
     width = weeks * cell + pad_x * 2
     height = 7 * cell + pad_y * 2
+
+    def centre(w, d):
+        return (pad_x + w * cell + size / 2, pad_y + d * cell + size / 2)
+
     eaten = []
     order = 0
     for w in range(weeks):
@@ -348,41 +357,61 @@ def snake_svg(grid):
             level = grid[w][d]
             if level == 0:
                 continue
-            x = pad_x + w * cell + size / 2
-            y = pad_y + d * cell + size / 2
-            eaten.append((level, order, x, y, w, d))
+            eaten.append((level, order, w, d))
             order += 1
     eaten.sort(key=lambda e: (-e[0], e[1]))
     bands = {4: (0.0, 0.30), 3: (0.30, 0.55), 2: (0.55, 0.75), 1: (0.75, 0.97)}
     counts = {}
-    for level, _, _, _, _, _ in eaten:
+    for level, _, _, _ in eaten:
         counts[level] = counts.get(level, 0) + 1
     seen = {}
     eat_time = {}
-    for level, _, x, y, w, d in eaten:
+    for level, _, w, d in eaten:
         rank = seen.get(level, 0)
         seen[level] = rank + 1
         start_t, end_t = bands[level]
         t = start_t + (rank + 0.5) * (end_t - start_t) / counts[level]
         eat_time[(w, d)] = t
     if eaten:
-        eat_time[(eaten[0][4], eaten[0][5])] = 0.0
-    path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for _, _, x, y, _, _ in eaten)
-    # Head timing: keyPoints are the fraction along the path,
-    # keyTimes are the eat times, so the head arrives at each
-    # bright cell on schedule and lingers there, instead of
-    # zipping past in the first half second.
+        eat_time[(eaten[0][2], eaten[0][3])] = 0.0
+
+    # Grid walk, turn points only. Each leg is horizontal
+    # then vertical, so no segment is diagonal.
+    walk = []  # list of (x, y, time)
+    cur_w, cur_d = eaten[0][2], eaten[0][3]
+    walk.append((*centre(cur_w, cur_d), 0.0))
+    for level, _, tw, td in eaten[1:]:
+        t_target = eat_time[(tw, td)]
+        t_prev = walk[-1][2]
+        # Horizontal leg to the target column.
+        if tw != cur_w:
+            x, y = centre(tw, cur_d)
+            # Time is interpolated by distance along the leg.
+            leg_steps = abs(tw - cur_w) + abs(td - cur_d)
+            t_turn = t_prev + (abs(tw - cur_w) / leg_steps) * (t_target - t_prev) if leg_steps else t_target
+            walk.append((x, y, t_turn))
+            cur_w = tw
+        # Vertical leg to the target row.
+        if td != cur_d:
+            x, y = centre(tw, td)
+            walk.append((x, y, t_target))
+            cur_d = td
+        else:
+            # Target was reached on the horizontal leg, its
+            # time is already the turn point time, fix it.
+            if walk[-1][0] == centre(tw, td)[0] and walk[-1][1] == centre(tw, td)[1]:
+                walk[-1] = (walk[-1][0], walk[-1][1], t_target)
+    # Final rest point, head stays at the last cell.
+    walk.append((*walk[-1][:2], 1.0))
+    path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y, _ in walk)
     cum = [0.0]
-    for i in range(1, len(eaten)):
-        dx = eaten[i][2] - eaten[i - 1][2]
-        dy = eaten[i][3] - eaten[i - 1][3]
+    for i in range(1, len(walk)):
+        dx = walk[i][0] - walk[i - 1][0]
+        dy = walk[i][1] - walk[i - 1][1]
         cum.append(cum[-1] + _math.hypot(dx, dy))
     total_len = cum[-1] or 1.0
     key_points = [c / total_len for c in cum]
-    key_times = [eat_time[(e[4], e[5])] for e in eaten]
-    # keyTimes must end at 1, head rests at the last cell.
-    key_points.append(key_points[-1])
-    key_times.append(1.0)
+    key_times = [w[2] for w in walk]
     dur = 40
     parts = []
     parts.append(
@@ -411,19 +440,28 @@ def snake_svg(grid):
                 f'keyTimes="0;{t:.3f};{eat:.3f};0.98;1" dur="{dur}s" '
                 f'repeatCount="indefinite"/></rect>'
             )
-    # Body segments: one per eaten cell, appearing when eaten
-    # and staying until the loop restarts. Only the head moves.
-    for level, _, x, y, w, d in eaten:
-        t = eat_time[(w, d)]
-        appear = min(max(t, 0.001), 0.99)
-        parts.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="4" fill="#39d353" opacity="0">'
-            f'<animate attributeName="opacity" values="0;0;1;1;0" '
-            f'keyTimes="0;{appear:.3f};{min(appear + 0.01, 0.99):.3f};0.97;1" '
-            f'dur="{dur}s" repeatCount="indefinite"/></circle>'
-        )
     kp = ";".join(f"{v:.4f}" for v in key_points)
     kt = ";".join(f"{v:.3f}" for v in key_times)
+    # Body, up to 12 segments. Segment i appears when the
+    # i-th target is eaten, then follows the head along the
+    # same grid walk, trailing by 0.8 seconds per segment.
+    max_body = 12
+    for i in range(1, max_body + 1):
+        if i - 1 >= len(eaten):
+            break
+        t_appear = eat_time[(eaten[i - 1][2], eaten[i - 1][3])]
+        op = round(0.9 - i * 0.04, 2)
+        appear = min(max(t_appear, 0.001), 0.99)
+        parts.append(
+            f'<circle r="5" fill="#39d353" opacity="0">'
+            f'<animate attributeName="opacity" values="0;0;{op};{op};0" '
+            f'keyTimes="0;{appear:.3f};{min(appear + 0.01, 0.99):.3f};0.97;1" '
+            f'dur="{dur}s" repeatCount="indefinite"/>'
+            f'<animateMotion dur="{dur}s" calcMode="linear" begin="-{i * 0.8:.1f}s" '
+            f'keyPoints="{kp}" keyTimes="{kt}" repeatCount="indefinite">'
+            f'<mpath href="#snake-path" xlink:href="#snake-path"/>'
+            f'</animateMotion></circle>'
+        )
     parts.append(
         f'<g><circle r="7" fill="#39d353"/>'
         f'<circle cx="2.5" cy="-2.5" r="1.5" fill="#0d1117"/>'
