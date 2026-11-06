@@ -458,17 +458,23 @@ def snake_svg(grid):
     # ahead of the head, moving first and going into the
     # spot before the head. Positive begin starts the
     # segment later, so it always trails, never leads.
-    # It sits at the start point until its begin time.
+    # NOTE, Nov 6 fix: do NOT put cx, cy on these circles.
+    # animateMotion translates the element by the path
+    # point, so cx, cy are added on top of it. cx=51, cy=51
+    # pushed every segment 51px right and down, outside
+    # the grid and off the head. A circle with animateMotion
+    # must sit at 0,0, so the path point is its centre.
+    # It only becomes visible once its motion has started,
+    # so it never flashes at the corner before begin.
     max_body = 10
-    sx, sy = centre(eaten[0][2], eaten[0][3]) if eaten else (0, 0)
     for i in range(1, max_body + 1):
         if i - 1 >= len(eaten):
             break
         t_appear = eat_by_cell[(eaten[i - 1][2], eaten[i - 1][3])]
         op = round(0.9 - i * 0.04, 2)
-        appear = min(max(t_appear, 0.001), 0.99)
+        appear = min(max(t_appear, i * step_time / dur, 0.001), 0.99)
         parts.append(
-            f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="5" fill="#39d353" opacity="0">'
+            f'<circle r="5" fill="#39d353" opacity="0">'
             f'<animate attributeName="opacity" values="0;0;{op};{op};0" '
             f'keyTimes="0;{appear:.3f};{min(appear + 0.01, 0.99):.3f};0.97;1" '
             f'dur="{dur}s" repeatCount="indefinite"/>'
