@@ -339,6 +339,8 @@ def snake_svg(grid):
     # them, level 4 longest, so you can see it. Every time
     # it eats, a new segment joins the body behind the head.
     # Body grows to 10 segments. Gray blocks are never eaten.
+    # Eaten squares dim to 0.3, not 0, so the grid stays.
+    # Body begin is positive, so it trails, never leads.
     import math as _math
 
     weeks = len(grid)
@@ -363,7 +365,7 @@ def snake_svg(grid):
     eaten.sort(key=lambda e: (-e[0], e[1]))
     dwell = {4: 1.2, 3: 0.7, 2: 0.35, 1: 0.0}
     total_dwell = sum(dwell[level] for level, _, _, _ in eaten)
-    dur = 60
+    dur = 90
     travel_time = dur - total_dwell
     # Grid walk, turn points only, horizontal then vertical.
     legs = []  # (x, y, steps, target_level or None)
@@ -445,14 +447,20 @@ def snake_svg(grid):
             parts.append(
                 f'<rect x="{rx}" y="{ry}" width="{size}" height="{size}" '
                 f'rx="2" fill="{GREEN[level]}">'
-                f'<animate attributeName="opacity" values="1;1;0;0;1" '
+                f'<animate attributeName="opacity" values="1;1;0.3;0.3;1" '
                 f'keyTimes="0;{tt:.3f};{eat:.3f};0.98;1" dur="{dur}s" '
                 f'repeatCount="indefinite"/></rect>'
             )
     # Body, 10 segments. Segment i trails the head by i
     # cells, so one step_time per segment, and appears when
     # the i-th target is eaten, then stays in the body.
+    # The begin is POSITIVE: a negative begin put the body
+    # ahead of the head, moving first and going into the
+    # spot before the head. Positive begin starts the
+    # segment later, so it always trails, never leads.
+    # It sits at the start point until its begin time.
     max_body = 10
+    sx, sy = centre(eaten[0][2], eaten[0][3]) if eaten else (0, 0)
     for i in range(1, max_body + 1):
         if i - 1 >= len(eaten):
             break
@@ -460,11 +468,11 @@ def snake_svg(grid):
         op = round(0.9 - i * 0.04, 2)
         appear = min(max(t_appear, 0.001), 0.99)
         parts.append(
-            f'<circle r="5" fill="#39d353" opacity="0">'
+            f'<circle cx="{sx:.1f}" cy="{sy:.1f}" r="5" fill="#39d353" opacity="0">'
             f'<animate attributeName="opacity" values="0;0;{op};{op};0" '
             f'keyTimes="0;{appear:.3f};{min(appear + 0.01, 0.99):.3f};0.97;1" '
             f'dur="{dur}s" repeatCount="indefinite"/>'
-            f'<animateMotion dur="{dur}s" calcMode="linear" begin="-{i * step_time:.3f}s" '
+            f'<animateMotion dur="{dur}s" calcMode="linear" begin="{i * step_time:.3f}s" '
             f'keyPoints="{kp}" keyTimes="{kt}" repeatCount="indefinite">'
             f'<mpath href="#snake-path" xlink:href="#snake-path"/>'
             f'</animateMotion></circle>'
