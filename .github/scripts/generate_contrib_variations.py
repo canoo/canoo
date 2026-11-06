@@ -305,29 +305,45 @@ def snake_svg(grid):
     # Fix, Nov 6: the old version repeated the whole path
     # string 13 times, one per body segment, and added a small
     # dot circle on every contribution cell. On iOS / GitHub
-    # that rendered as a tangled loop, like infinity signs,
-    # instead of a snake moving down, right, up, right.
+    # that rendered as a tangled loop, like infinity signs.
     # Now the path is defined once in <defs> and every segment
     # references it with <mpath>, the dots are gone, and the
     # squares themselves fade out as the snake eats them,
-    # like Platane/snk does. Loop is 20 seconds, so the
-    # movement is clearly visible.
+    # like Platane/snk does.
+    # Hunting, Nov 6: the snake no longer follows the calendar
+    # in order. It visits the highest contribution days first,
+    # then the next highest, down to the lowest, oldest first
+    # within the same level. That is the route it follows, so
+    # it jumps across the grid to its next target instead of
+    # sweeping left to right.
+    # Gray blocks, level 0, are never eaten: they have no
+    # fade animation at all. The snake may pass over one on
+    # its way to a target, covering it briefly, but it stays.
+    # One short snake now, 5 body segments, so it does not
+    # look like a bunch of snakes.
     weeks = len(grid)
     cell = 13
     size = 10
     pad_x, pad_y = 20, 20
     width = weeks * cell + pad_x * 2
     height = 7 * cell + pad_y * 2
-    points = []
+    eaten = []
+    order = 0
     for w in range(weeks):
-        days = range(7) if w % 2 == 0 else range(6, -1, -1)
-        for d in days:
+        for d in range(7):
+            level = grid[w][d]
+            if level == 0:
+                continue
             x = pad_x + w * cell + size / 2
             y = pad_y + d * cell + size / 2
-            points.append((x, y, w, d))
-    path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y, _, _ in points)
-    dur = 20
-    total = len(points)
+            eaten.append((level, order, x, y, w, d))
+            order += 1
+    eaten.sort(key=lambda e: (-e[0], e[1]))
+    eat_time = {}
+    for i, (_, _, _, _, w, d) in enumerate(eaten):
+        eat_time[(w, d)] = i / len(eaten) if eaten else 0
+    path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for _, _, x, y, _, _ in eaten)
+    dur = 30
     parts = []
     parts.append(
         f'<svg xmlns="http://www.w3.org/2000/svg" '
@@ -335,29 +351,31 @@ def snake_svg(grid):
         f'height="{height}" viewBox="0 0 {width} {height}">'
     )
     parts.append(f'<defs><path id="snake-path" d="{path}" fill="none"/></defs>')
-    for i, (x, y, w, d) in enumerate(points):
-        rx = pad_x + w * cell
-        ry = pad_y + d * cell
-        if grid[w][d] == 0:
+    for w in range(weeks):
+        for d in range(7):
+            rx = pad_x + w * cell
+            ry = pad_y + d * cell
+            level = grid[w][d]
+            if level == 0:
+                parts.append(
+                    f'<rect x="{rx}" y="{ry}" width="{size}" height="{size}" '
+                    f'rx="2" fill="{GREEN[0]}"/>'
+                )
+                continue
+            t = eat_time[(w, d)]
+            eat = min(t + 0.02, 0.99)
             parts.append(
                 f'<rect x="{rx}" y="{ry}" width="{size}" height="{size}" '
-                f'rx="2" fill="{GREEN[0]}"/>'
+                f'rx="2" fill="{GREEN[level]}">'
+                f'<animate attributeName="opacity" values="1;1;0;0;1" '
+                f'keyTimes="0;{t:.3f};{eat:.3f};0.98;1" dur="{dur}s" '
+                f'repeatCount="indefinite"/></rect>'
             )
-            continue
-        t = i / total
-        eat = min(t + 0.02, 0.99)
-        parts.append(
-            f'<rect x="{rx}" y="{ry}" width="{size}" height="{size}" '
-            f'rx="2" fill="{GREEN[grid[w][d]]}">'
-            f'<animate attributeName="opacity" values="1;1;0;0;1" '
-            f'keyTimes="0;{t:.3f};{eat:.3f};0.98;1" dur="{dur}s" '
-            f'repeatCount="indefinite"/></rect>'
-        )
-    for i in range(8, 0, -1):
-        opacity = round(0.9 - i * 0.07, 2)
+    for i in range(5, 0, -1):
+        opacity = round(0.9 - i * 0.12, 2)
         parts.append(
             f'<circle r="5" fill="#39d353" opacity="{opacity}">'
-            f'<animateMotion dur="{dur}s" begin="-{i * 1.0}s" '
+            f'<animateMotion dur="{dur}s" begin="-{i * 0.5}s" '
             f'repeatCount="indefinite">'
             f'<mpath href="#snake-path" xlink:href="#snake-path"/>'
             f'</animateMotion></circle>'
