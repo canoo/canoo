@@ -349,12 +349,29 @@ def streak_data(calendar):
             days.append((day["date"], day["contributionCount"]))
     days.sort()
     total = sum(c for _, c in days)
+    # Fix, Nov 6: the calendar ends today, and today may have
+    # 0 contributions so far. Counting back from the last day
+    # would give a streak of 0 even though the streak is still
+    # alive. Trim trailing zero days, then count back from the
+    # last day with contributions, but only if that day is
+    # today or yesterday, otherwise the streak has ended.
+    from datetime import date as _date
+
+    last_idx = len(days) - 1
+    while last_idx >= 0 and days[last_idx][1] == 0:
+        last_idx -= 1
     cur = 0
-    for _, c in reversed(days):
-        if c > 0:
-            cur += 1
-        else:
-            break
+    cur_start = None
+    if last_idx >= 0:
+        last_date = _date.fromisoformat(days[last_idx][0])
+        end_date = _date.fromisoformat(days[-1][0])
+        if (end_date - last_date).days <= 1:
+            for _, c in reversed(days[: last_idx + 1]):
+                if c > 0:
+                    cur += 1
+                else:
+                    break
+            cur_start = days[last_idx - cur + 1][0] if cur else None
     best = 0
     run = 0
     best_start = best_end = None
@@ -370,12 +387,11 @@ def streak_data(calendar):
                 best_end = d
         else:
             run = 0
-    cur_start = days[-cur][0] if cur else None
     return {
         "total": total,
         "current": cur,
         "current_start": cur_start,
-        "current_end": days[-1][0],
+        "current_end": days[last_idx][0] if cur else None,
         "longest": best,
         "longest_start": best_start,
         "longest_end": best_end,
