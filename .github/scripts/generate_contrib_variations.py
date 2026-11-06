@@ -327,13 +327,12 @@ def snake_svg(grid):
     # contributions first, then the next highest, down to
     # the lowest, oldest first within a level, moving only
     # up, down, left, or right along the grid, never
-    # diagonally, at a constant speed. Every time it eats
-    # a day, a new segment joins its body behind the head,
-    # up to 10 segments. The head waits at each food until
-    # the whole body has caught up and gathered there, then
-    # moves on to the next food. The wait at each food is
-    # the time the current body needs to catch up, plus a
-    # short pause to eat, brightest foods longest. Eaten
+    # diagonally, at a constant speed. It just goes, eats,
+    # and moves on, the body follows behind it, it does
+    # NOT wait for the body at each food. Every time it
+    # eats a day, a new segment joins its body behind the
+    # head, up to 10 segments. It pauses briefly on the
+    # bright days to eat them, level 4 longest. Eaten
     # squares dim to 0.3, not 0, so the grid stays visible,
     # and the reset brings them back. Gray blocks are never
     # eaten. Body circles have no cx, cy, animateMotion
@@ -362,47 +361,33 @@ def snake_svg(grid):
             eaten.append((level, order, w, d))
             order += 1
     eaten.sort(key=lambda e: (-e[0], e[1]))
-    max_body = 10
-    dur = 180
-    eat_pause = {4: 0.5, 3: 0.3, 2: 0.2, 1: 0.1}
+    dwell = {4: 1.2, 3: 0.7, 2: 0.35, 1: 0.0}
+    total_dwell = sum(dwell[level] for level, _, _, _ in eaten)
+    dur = 90
+    travel_time = dur - total_dwell
     # Grid walk, turn points only, horizontal then vertical.
-    # Each leg entry is (x, y, steps, level, target_index).
-    # target_index is 1-based, the number of foods eaten
-    # when the head arrives there, so the body length then
-    # is min(target_index, max_body).
-    legs = []
+    legs = []  # (x, y, steps, target_level or None)
     cur_w, cur_d = eaten[0][2], eaten[0][3]
-    legs.append((*centre(cur_w, cur_d), 0, eaten[0][0], 1))
+    legs.append((*centre(cur_w, cur_d), 0, eaten[0][0]))
     total_steps = 0
-    for idx, (level, _, tw, td) in enumerate(eaten[1:], start=2):
+    for level, _, tw, td in eaten[1:]:
         if tw != cur_w:
             steps = abs(tw - cur_w)
-            legs.append((*centre(tw, cur_d), steps, None, None))
+            legs.append((*centre(tw, cur_d), steps, None))
             total_steps += steps
             cur_w = tw
         if td != cur_d:
             steps = abs(td - cur_d)
-            legs.append((*centre(tw, td), steps, level, idx))
+            legs.append((*centre(tw, td), steps, level))
             total_steps += steps
             cur_d = td
         else:
-            legs[-1] = (legs[-1][0], legs[-1][1], legs[-1][2], level, idx)
-    # Wait time at each food: the current body needs
-    # body_len * step_time to catch up, plus a short eat
-    # pause. step_time depends on total dwell, so solve it:
-    # total_dwell = S * step_time + P, with step_time =
-    # (dur - total_dwell) / total_steps.
-    body_lens = [min(k, max_body) for k in range(1, len(eaten) + 1)]
-    s_sum = sum(body_lens)
-    p_sum = sum(eat_pause[level] for level, _, _, _ in eaten)
-    k_ratio = s_sum / total_steps if total_steps else 0
-    total_dwell = (k_ratio * dur + p_sum) / (1 + k_ratio) if total_steps else 0
-    travel_time = dur - total_dwell
+            legs[-1] = (legs[-1][0], legs[-1][1], legs[-1][2], level)
     step_time = travel_time / total_steps if total_steps else 0
     # keyPoints / keyTimes: distance fraction and time
     # fraction. Time per leg is proportional to its steps,
-    # so speed is constant while travelling, plus the wait
-    # at each food, same point, later time.
+    # so speed is constant, plus a brief pause at each
+    # target to eat it.
     path_pts = []
     key_points = []
     key_times = []
@@ -410,7 +395,7 @@ def snake_svg(grid):
     cum_time = 0.0
     total_dist = total_steps * cell
     eat_time = {}
-    for x, y, steps, level, idx in legs:
+    for x, y, steps, level in legs:
         if steps:
             cum_dist += steps * cell
             cum_time += steps * step_time
@@ -419,8 +404,7 @@ def snake_svg(grid):
         key_times.append(cum_time / dur)
         if level is not None:
             eat_time[(x, y)] = cum_time / dur
-            wait = min(idx, max_body) * step_time + eat_pause[level]
-            cum_time += wait
+            cum_time += dwell[level]
             key_points.append(cum_dist / total_dist if total_dist else 0)
             key_times.append(cum_time / dur)
     key_points.append(key_points[-1])
@@ -461,6 +445,7 @@ def snake_svg(grid):
                 f'keyTimes="0;{tt:.3f};{eat:.3f};0.98;1" dur="{dur}s" '
                 f'repeatCount="indefinite"/></rect>'
             )
+    max_body = 10
     for i in range(1, max_body + 1):
         if i - 1 >= len(eaten):
             break
