@@ -67,7 +67,6 @@ TypeScript / React / Next.js, Go, Python, Firebase, Cloudflare
   </tr>
 </table>
 
-<p align="center">Want these cool stat cards? Get them from <a href="https://github.com/canoo/github-stats-cards">canoo/github-stats-cards</a></p>
-<p align="center">Tetris and 3D contribution cards, coming to <a href="https://github.com/canoo/github-stats-cards">canoo/github-stats-cards</a></p>
+<p align="center">Want these cards? Get the stats cards from <a href="https://github.com/canoo/github-stats-cards">canoo/github-stats-cards</a>, Tetris and 3D are coming there next</p>
 
 <!-- Snake, 3D graph and stats cards appear after their workflows run once. -->
