@@ -241,34 +241,51 @@ def tetris_svg(grid):
 
 
 def static_3d_svg(grid):
+    # Fix, Nov 6: the old version drew a flat cube for every
+    # cell, even level 0, so it looked like a solid dark slab
+    # with a few bumps, just up and down bars. Now empty cells
+    # are skipped entirely, bars are taller and brighter, and
+    # cubes are drawn back to front so front cubes are not
+    # hidden behind back ones.
     weeks = len(grid)
     dx, dy = 16, 8
     ox = 140
-    oy = 60
+    oy = 120
     width = (weeks + 7) * dx + 80
-    height = (weeks + 7) * dy + 110
-    cubes = []
+    height = (weeks + 7) * dy + 180
+    top_colors = ["", "#1f8a4a", "#26a641", "#39d353", "#7ee787"]
+    left_colors = ["", "#14532d", "#166534", "#15803d", "#22c55e"]
+    right_colors = ["", "#0e4429", "#14532d", "#166534", "#15803d"]
+    cells = []
     for w in range(weeks):
         for d in range(7):
             level = grid[w][d]
-            h = level * 7
-            x = ox + (w - d) * dx
-            y = oy + (w + d) * dy - h
-            top = GREEN[level]
-            left = "#0e4429" if level else "#161b22"
-            right = "#006d32" if level else "#21262d"
-            cubes.append(
-                f'<polygon points="{x},{y} {x + dx},{y + dy} {x},{y + 2 * dy} '
-                f'{x - dx},{y + dy}" fill="{top}"/>'
-            )
-            cubes.append(
-                f'<polygon points="{x - dx},{y + dy} {x},{y + 2 * dy} '
-                f'{x},{y + 2 * dy + h} {x - dx},{y + dy + h}" fill="{left}"/>'
-            )
-            cubes.append(
-                f'<polygon points="{x},{y + 2 * dy} {x + dx},{y + dy} '
-                f'{x + dx},{y + dy + h} {x},{y + 2 * dy + h}" fill="{right}"/>'
-            )
+            if level == 0:
+                continue
+            cells.append((w + d, w, d, level))
+    cells.sort()
+    cubes = []
+    for _, w, d, level in cells:
+        # Non-linear heights, so a busy day stands out clearly
+        # from a quiet day, instead of a flat plateau.
+        h = [0, 8, 20, 36, 56][level]
+        x = ox + (w - d) * dx
+        y = oy + (w + d) * dy - h
+        top = top_colors[level]
+        left = left_colors[level]
+        right = right_colors[level]
+        cubes.append(
+            f'<polygon points="{x},{y} {x + dx},{y + dy} {x},{y + 2 * dy} '
+            f'{x - dx},{y + dy}" fill="{top}"/>'
+        )
+        cubes.append(
+            f'<polygon points="{x - dx},{y + dy} {x},{y + 2 * dy} '
+            f'{x},{y + 2 * dy + h} {x - dx},{y + dy + h}" fill="{left}"/>'
+        )
+        cubes.append(
+            f'<polygon points="{x},{y + 2 * dy} {x + dx},{y + dy} '
+            f'{x + dx},{y + dy + h} {x},{y + 2 * dy + h}" fill="{right}"/>'
+        )
     parts = []
     parts.append(
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
@@ -285,6 +302,16 @@ def static_3d_svg(grid):
 
 
 def snake_svg(grid):
+    # Fix, Nov 6: the old version repeated the whole path
+    # string 13 times, one per body segment, and added a small
+    # dot circle on every contribution cell. On iOS / GitHub
+    # that rendered as a tangled loop, like infinity signs,
+    # instead of a snake moving down, right, up, right.
+    # Now the path is defined once in <defs> and every segment
+    # references it with <mpath>, the dots are gone, and the
+    # squares themselves fade out as the snake eats them,
+    # like Platane/snk does. Loop is 20 seconds, so the
+    # movement is clearly visible.
     weeks = len(grid)
     cell = 13
     size = 10
@@ -299,44 +326,49 @@ def snake_svg(grid):
             y = pad_y + d * cell + size / 2
             points.append((x, y, w, d))
     path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y, _, _ in points)
-    dur = 40
+    dur = 20
+    total = len(points)
     parts = []
     parts.append(
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" '
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'xmlns:xlink="http://www.w3.org/1999/xlink" width="{width}" '
         f'height="{height}" viewBox="0 0 {width} {height}">'
     )
-    for w in range(weeks):
-        for d in range(7):
-            x = pad_x + w * cell
-            y = pad_y + d * cell
-            parts.append(
-                f'<rect x="{x}" y="{y}" width="{size}" height="{size}" '
-                f'rx="2" fill="{GREEN[grid[w][d]]}"/>'
-            )
-    total = len(points)
+    parts.append(f'<defs><path id="snake-path" d="{path}" fill="none"/></defs>')
     for i, (x, y, w, d) in enumerate(points):
+        rx = pad_x + w * cell
+        ry = pad_y + d * cell
         if grid[w][d] == 0:
+            parts.append(
+                f'<rect x="{rx}" y="{ry}" width="{size}" height="{size}" '
+                f'rx="2" fill="{GREEN[0]}"/>'
+            )
             continue
         t = i / total
+        eat = min(t + 0.02, 0.99)
         parts.append(
-            f'<circle cx="{x:.1f}" cy="{y:.1f}" r="3" fill="#7ee787">'
+            f'<rect x="{rx}" y="{ry}" width="{size}" height="{size}" '
+            f'rx="2" fill="{GREEN[grid[w][d]]}">'
             f'<animate attributeName="opacity" values="1;1;0;0;1" '
-            f'keyTimes="0;{t:.3f};{t + 0.01:.3f};0.98;1" dur="{dur}s" '
-            f'repeatCount="indefinite"/></circle>'
+            f'keyTimes="0;{t:.3f};{eat:.3f};0.98;1" dur="{dur}s" '
+            f'repeatCount="indefinite"/></rect>'
         )
-    for i in range(12, 0, -1):
-        opacity = round(0.9 - i * 0.06, 2)
+    for i in range(8, 0, -1):
+        opacity = round(0.9 - i * 0.07, 2)
         parts.append(
             f'<circle r="5" fill="#39d353" opacity="{opacity}">'
-            f'<animateMotion dur="{dur}s" begin="-{i * 0.8}s" '
-            f'repeatCount="indefinite" path="{path}"/></circle>'
+            f'<animateMotion dur="{dur}s" begin="-{i * 1.0}s" '
+            f'repeatCount="indefinite">'
+            f'<mpath href="#snake-path" xlink:href="#snake-path"/>'
+            f'</animateMotion></circle>'
         )
     parts.append(
         f'<g><circle r="6.5" fill="#39d353"/>'
         f'<circle cx="2.5" cy="-2.5" r="1.5" fill="#0d1117"/>'
         f'<circle cx="2.5" cy="2.5" r="1.5" fill="#0d1117"/>'
-        f'<animateMotion dur="{dur}s" repeatCount="indefinite" path="{path}"/>'
-        f'</g>'
+        f'<animateMotion dur="{dur}s" repeatCount="indefinite">'
+        f'<mpath href="#snake-path" xlink:href="#snake-path"/>'
+        f'</animateMotion></g>'
     )
     parts.append("</svg>")
     return "\n".join(parts)
