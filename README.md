@@ -62,7 +62,5 @@
 |---|---|---|
 | **Cibum** | Pantry tracking, expiry alerts, leftover recipes | [cibum.app](https://cibum.app) |
 | **NEXUS** | AI CLI orchestration, local and cloud models, personas, TUI | [github.com/canoo/agent-nexus](https://github.com/canoo/agent-nexus) |
-| **S1 Companion** | Game companion, recipe mixing, GPS map, cloud sync | [info.codelogiic.com](https://info.codelogiic.com/) |
-| **La Dulce Barra** | Snack bar and event catering booking site | [ladulcebarra.party](https://ladulcebarra.party) |
-| **Omniscores Timer** | Minimalist dot matrix tournament and turn clock | [info.codelogiic.com](https://info.codelogiic.com/) |
+| **Omniscores Timer** | Minimalist dot matrix tournament and turn clock | [timer.omniscores.cc](https://timer.omniscores.cc) |
 
